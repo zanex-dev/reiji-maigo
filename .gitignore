@@ -1,0 +1,40 @@
+# Reference assets & version backups (never committed to public white-hat repo)
+_refs/
+_versions/
+assets/.gitkeep
+assets/*_v[0-9]*.*
+assets/banner.png
+
+# Python bytecode & packaging artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+build/
+dist/
+*.egg-info/
+.eggs/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Local SQLite WAL ledgers, vaults & backups
+*.db
+*.db-wal
+*.db-shm
+*.bak
+*.bak-*
+*vault*.bin
+*vault*.json
+
+# Test / lint caches & OS metadata
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.DS_Store
+Thumbs.db

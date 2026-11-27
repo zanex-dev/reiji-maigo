@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reiji-maigo"
+version = "0.2.0"
+description = "Zero-dependency temporal memory microkernel, immutable data contracts, and fault-isolated plugin foundation."
+readme = "README.md"
+license = { text = "PolyForm-Noncommercial-1.0.0" }
+requires-python = ">=3.10"
+authors = [
+    { name = "zanex", email = "310354113+zanex-dev@users.noreply.github.com" }
+]
+keywords = [
+    "reiji-maigo",
+    "memory",
+    "microkernel",
+    "plugin-architecture",
+    "bitemporal",
+    "agent-memory"
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
+dependencies = []
+
+[project.scripts]
+reiji = "reiji_maigo.cli:main"
+
+[project.entry-points."reiji_maigo.plugins"]
+roi_ledger = "reiji_maigo.plugins.roi_ledger:create_plugin"
+epoch_vault = "reiji_maigo.plugins.epoch_vault:create_plugin"
+thermal_sync = "reiji_maigo.plugins.thermal_sync:create_plugin"
+companion = "reiji_maigo.plugins.companion:create_plugin"
+hybrid_reranker = "reiji_maigo.plugins.hybrid_reranker:create_plugin"
+bootstrap_importer = "reiji_maigo.plugins.bootstrap_importer:create_plugin"
+bench_harness = "reiji_maigo.plugins.bench_harness:create_plugin"
+
+[project.entry-points."shinobu.plugins"]
+reiji_maigo = "reiji_maigo.bridges.shinobu:create_plugin"
+
+[project.entry-points."acerola_orion.plugins"]
+reiji_maigo = "reiji_maigo.bridges.star_panel:create_plugin"
+
+[project.urls]
+Homepage = "https://github.com/zanex-dev/reiji-maigo"
+Repository = "https://github.com/zanex-dev/reiji-maigo"
+Issues = "https://github.com/zanex-dev/reiji-maigo/issues"
+
+[tool.setuptools.packages.find]
+include = ["reiji_maigo*"]
