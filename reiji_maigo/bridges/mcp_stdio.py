@@ -123,13 +123,17 @@ class _McpToolEntry:
     description: str
     input_schema: dict[str, Any]
     handler: Callable[..., Any]
+    annotations: dict[str, Any] | None = None
 
     def to_mcp_schema(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "name": self.name,
             "description": self.description,
             "inputSchema": copy.deepcopy(self.input_schema),
         }
+        if self.annotations:
+            payload["annotations"] = copy.deepcopy(self.annotations)
+        return payload
 
 
 @dataclass(slots=True)
@@ -341,41 +345,378 @@ class ReijiMcpServer:
     # Tool & Resource Registries
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _mcp_tool_overrides() -> dict[str, dict[str, Any]]:
+        read_only_ann = {
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        }
+        span_schema = {
+            "type": "object",
+            "description": (
+                "Immutable provenance turn range ({episode_id, turn_start, turn_end}). "
+                "Required when action is 'create', 'append', or 'wake'."
+            ),
+            "required": ["episode_id", "turn_start", "turn_end"],
+            "properties": {
+                "episode_id": {
+                    "type": "string",
+                    "description": "Non-empty session or episode identifier owning the source turns.",
+                },
+                "turn_start": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Inclusive starting turn index (>= 0).",
+                },
+                "turn_end": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Inclusive ending turn index (>= turn_start).",
+                },
+            },
+        }
+        return {
+            "reiji_pool_snapshot": {
+                "description": (
+                    "Read the current ActivePool short-term working-memory snapshot and active task chains. "
+                    "Call at session start or before calling reiji_update_pool; to search archived long-term "
+                    "memory cards instead, use reiji_hybrid_recall."
+                ),
+                "annotations": read_only_ann,
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "include_undigested": {
+                            "type": "boolean",
+                            "default": True,
+                            "description": "Whether to include staged undigested turn notes alongside active events.",
+                        },
+                        "now_iso": {
+                            "type": "string",
+                            "description": "Optional ISO-8601 timestamp override used to evaluate retention decay.",
+                        },
+                    },
+                },
+            },
+            "reiji_update_pool": {
+                "description": (
+                    "Manage the non-destructive lifecycle of ActivePool working-memory events: 'create' a new event "
+                    "(requires title, step, span), 'append' a progress step (requires event_id, step, span), 'touch' "
+                    "retention timestamp (requires event_id), update 'status' (requires event_id, status), 'compact' "
+                    "older steps losslessly (requires event_id, checkpoint_summary), 'archive' or 'hibernate' an event "
+                    "into a sealed long-term MemoryCard (requires event_id, domain), or 'wake' a hibernated card back "
+                    "into ActivePool (requires card_id, step, span). By zero-trust append-only design, sealed cards "
+                    "are superseded via archiving rather than hard-deleted."
+                ),
+                "annotations": {
+                    "readOnlyHint": False,
+                    "destructiveHint": False,
+                    "idempotentHint": False,
+                    "openWorldHint": False,
+                },
+                "input_schema": {
+                    "type": "object",
+                    "required": ["action"],
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": [
+                                "create",
+                                "append",
+                                "touch",
+                                "status",
+                                "compact",
+                                "archive",
+                                "hibernate",
+                                "wake",
+                            ],
+                            "description": "Lifecycle transition to apply to the working-memory event or card.",
+                        },
+                        "event_id": {
+                            "type": "string",
+                            "description": "Target ActivePool event ID (required for append/touch/status/compact/archive/hibernate).",
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "Concise task or quest title (required when action='create').",
+                        },
+                        "step": {
+                            "type": "string",
+                            "description": "Concrete progress step text (required when action is 'create', 'append', or 'wake').",
+                        },
+                        "span": span_schema,
+                        "scope": {
+                            "type": "string",
+                            "enum": ["quest", "micro"],
+                            "default": "quest",
+                            "description": "Retention tier: 'quest' for multi-step goals or 'micro' for transient scratch state.",
+                        },
+                        "status": {
+                            "type": "string",
+                            "description": "Updated event status label (required when action='status', optional on 'append').",
+                        },
+                        "checkpoint_summary": {
+                            "type": "string",
+                            "description": "Condensed summary of earlier steps (required when action='compact').",
+                        },
+                        "keep_last": {
+                            "type": "integer",
+                            "default": 2,
+                            "minimum": 1,
+                            "description": "Number of most recent raw steps to keep uncompacted when action='compact'.",
+                        },
+                        "domain": {
+                            "type": "string",
+                            "enum": list(LOCKED_DOMAINS),
+                            "description": "Locked target memory domain (required when action is 'archive' or 'hibernate').",
+                        },
+                        "tags": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Controlled L2 topic tags to bind when archiving or hibernating an event.",
+                        },
+                        "state": {
+                            "type": "object",
+                            "description": "Structured key-value decision state to seal inside the archived MemoryCard.",
+                        },
+                        "card_id": {
+                            "type": "string",
+                            "description": "Target hibernated MemoryCard ID to restore (required when action='wake').",
+                        },
+                        "now_iso": {
+                            "type": "string",
+                            "description": "Optional ISO-8601 timestamp override for deterministic replay.",
+                        },
+                    },
+                },
+            },
+            "reiji_recall_cards": {
+                "description": (
+                    "Query long-term sealed MemoryCards by explicit controlled tags (Level-1 Personalized PageRank) "
+                    "with optional Level-3 FTS5 fallback. Use this when exact domain/tag filters are already known; "
+                    "prefer reiji_hybrid_recall for open-ended natural-language queries, and follow up with "
+                    "reiji_read_evidence to inspect verbatim source turns."
+                ),
+                "annotations": read_only_ann,
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "domain": {
+                            "type": "string",
+                            "enum": list(LOCKED_DOMAINS),
+                            "description": "Optional locked domain filter (proj, infra, research, companion, life).",
+                        },
+                        "query_tags": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Explicit L2 tag names to seed Level-1 Personalized PageRank graph recall.",
+                        },
+                        "query": {
+                            "type": "string",
+                            "description": "Fallback full-text keyword query used when query_tags yield no cards and fallback_level3=true.",
+                        },
+                        "min_tag_hits": {
+                            "type": "integer",
+                            "default": 1,
+                            "minimum": 1,
+                            "description": "Minimum matching tag count required for direct card candidates.",
+                        },
+                        "top_k": {
+                            "type": "integer",
+                            "default": 3,
+                            "minimum": 1,
+                            "description": "Maximum number of ranked cards or fallback slices to return.",
+                        },
+                        "fallback_level3": {
+                            "type": "boolean",
+                            "default": True,
+                            "description": "Whether to run Level-3 FTS5 turn search when Level-1 tag recall returns empty.",
+                        },
+                        "pad": {
+                            "type": "integer",
+                            "default": 3,
+                            "minimum": 0,
+                            "description": "Surrounding conversation turns to include around each Level-3 fallback hit.",
+                        },
+                    },
+                },
+            },
+            "reiji_read_evidence": {
+                "description": (
+                    "Fetch the Level-2 verbatim raw conversation turns bound to a specific MemoryCard ID via its "
+                    "immutable SourceSpan coordinates. Use after reiji_hybrid_recall or reiji_recall_cards when "
+                    "exact historical wording, code snippets, or provenance verification are needed."
+                ),
+                "annotations": read_only_ann,
+                "input_schema": {
+                    "type": "object",
+                    "required": ["card_id"],
+                    "properties": {
+                        "card_id": {
+                            "type": "string",
+                            "description": "Unique identifier of the target MemoryCard whose source turns should be read.",
+                        },
+                        "pad": {
+                            "type": "integer",
+                            "default": 1,
+                            "minimum": 0,
+                            "description": "Number of adjacent context turns to include before and after each SourceSpan.",
+                        },
+                    },
+                },
+            },
+            "reiji_scout_deep": {
+                "description": (
+                    "Dispatch the read-only ScoutAgent to execute multi-hop 3-drawer memory reconnaissance and "
+                    "synthesize a cited briefing (returning abstained=true when ungrounded). Use only for complex "
+                    "cross-episode questions where single-pass reiji_hybrid_recall is insufficient; requires a "
+                    "configured Flash model runner."
+                ),
+                "annotations": read_only_ann,
+                "input_schema": {
+                    "type": "object",
+                    "required": ["query"],
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Multi-hop investigative question to resolve against historical memory.",
+                        },
+                        "domain": {
+                            "type": "string",
+                            "enum": list(LOCKED_DOMAINS),
+                            "description": "Optional locked domain scope to constrain ScoutAgent reconnaissance.",
+                        },
+                        "hint_tags": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Optional seed tags to prioritize during Drawer-1 graph exploration.",
+                        },
+                    },
+                },
+            },
+            "reiji_swarm_pulse": {
+                "description": (
+                    "Read operational health telemetry for the three-bee memory swarm (Scribe, Scout, Archivist), "
+                    "7-decimal anti-MemoryTax ROI ledger metrics, and cold-vault counts. Use to inspect background "
+                    "curation status or token ROI; to verify cryptographic integrity and L1 approvals, use "
+                    "reiji_security_audit instead."
+                ),
+                "annotations": read_only_ann,
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "format": {
+                            "type": "string",
+                            "enum": ["summary", "banner", "both"],
+                            "default": "both",
+                            "description": "Output representation: structured 'summary' JSON, ASCII 'banner', or 'both'.",
+                        },
+                    },
+                },
+            },
+            "reiji_security_audit": {
+                "description": (
+                    "Run a read-only zero-trust security verification over the tamper-evident HMAC audit hash chain, "
+                    "MemoryCard HMAC-SHA256 seals, and pending L1 human-approval queue. Use to detect tampering or "
+                    "check blocked high-risk memory mutations; for swarm throughput and ROI metrics, use reiji_swarm_pulse."
+                ),
+                "annotations": read_only_ann,
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "include_entries": {
+                            "type": "boolean",
+                            "default": False,
+                            "description": "Whether to include recent raw audit hash-chain entries in the response.",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "default": 20,
+                            "minimum": 0,
+                            "description": "Maximum number of pending L1 reviews and optional audit entries to return.",
+                        },
+                    },
+                },
+            },
+        }
+
     def _get_tools(self) -> dict[str, _McpToolEntry]:
         if self._tools is not None:
             return self._tools
 
+        overrides = self._mcp_tool_overrides()
         entries: dict[str, _McpToolEntry] = {}
         for spec in self._plugin.build_tools():
             name = str(spec.name)
+            meta = overrides.get(name, {})
             entries[name] = _McpToolEntry(
                 name=name,
-                description=str(spec.description),
-                input_schema=_normalize_input_schema(spec.parameters),
+                description=str(meta.get("description") or spec.description),
+                input_schema=_normalize_input_schema(meta.get("input_schema") or spec.parameters),
                 handler=spec.handler,
+                annotations=meta.get("annotations"),
             )
 
         entries["reiji_hybrid_recall"] = _McpToolEntry(
             name="reiji_hybrid_recall",
             description=(
-                "Hybrid memory recall delegating to an installed 'reranker' plugin "
-                "provider when available, with automatic fallback to Level-1 card "
-                "recall and Level-3 FTS deep slice."
+                "Primary natural-language long-term memory search fusing controlled L2 tag projection, Level-1 "
+                "Personalized PageRank, and Level-3 CJK-Bigram FTS5 slices via Reciprocal Rank Fusion (MemoRRF). "
+                "Prefer this first for general recall; use reiji_recall_cards for strict tag-only filtering, "
+                "reiji_read_evidence for full verbatim turn context, or reiji_scout_deep for multi-hop synthesis."
             ),
             input_schema={
                 "type": "object",
                 "required": ["query"],
                 "properties": {
-                    "query": {"type": "string"},
-                    "domain": {"type": "string", "enum": list(LOCKED_DOMAINS)},
-                    "query_tags": {"type": "array", "items": {"type": "string"}},
-                    "top_k": {"type": "integer", "default": 5},
-                    "min_tag_hits": {"type": "integer", "default": 1},
-                    "pad": {"type": "integer", "default": 3},
-                    "include_deep_slice": {"type": "boolean", "default": True},
+                    "query": {
+                        "type": "string",
+                        "description": "Natural-language question or keywords to recall from long-term memory.",
+                    },
+                    "domain": {
+                        "type": "string",
+                        "enum": list(LOCKED_DOMAINS),
+                        "description": "Optional locked domain filter (proj, infra, research, companion, life).",
+                    },
+                    "query_tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional explicit L2 tags to boost alongside automatic tag projection.",
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "default": 5,
+                        "minimum": 1,
+                        "description": "Maximum number of fused memory cards and slices to return.",
+                    },
+                    "min_tag_hits": {
+                        "type": "integer",
+                        "default": 1,
+                        "minimum": 1,
+                        "description": "Minimum tag overlap threshold for Level-1 candidate seeding.",
+                    },
+                    "pad": {
+                        "type": "integer",
+                        "default": 3,
+                        "minimum": 0,
+                        "description": "Number of surrounding turns included around each Level-3 FTS5 deep slice.",
+                    },
+                    "include_deep_slice": {
+                        "type": "boolean",
+                        "default": True,
+                        "description": "Whether to fuse Level-3 FTS5 raw conversation slices alongside MemoryCards.",
+                    },
                 },
             },
             handler=self._handle_hybrid_recall,
+            annotations={
+                "readOnlyHint": True,
+                "destructiveHint": False,
+                "idempotentHint": True,
+                "openWorldHint": False,
+            },
         )
 
         self._tools = entries

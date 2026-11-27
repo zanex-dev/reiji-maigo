@@ -276,6 +276,13 @@ class TestReijiMcpStdioBridge(unittest.TestCase):
             self.assertIn("inputSchema", tool)
             self.assertNotIn("parameters", tool)
             self.assertEqual(tool["inputSchema"]["type"], "object")
+            self.assertIn("annotations", tool)
+            self.assertIsInstance(tool["annotations"].get("readOnlyHint"), bool)
+            for prop_name, prop_schema in tool["inputSchema"]["properties"].items():
+                self.assertTrue(
+                    prop_schema.get("description"),
+                    msg=f"Missing parameter description on {tool['name']}.{prop_name}",
+                )
 
         # 1. Create event via reiji_update_pool
         create_resp = server.handle_rpc_message(
