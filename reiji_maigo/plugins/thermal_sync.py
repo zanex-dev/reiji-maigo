@@ -1020,6 +1020,9 @@ class ThermalSyncPlugin:
         radar_handler.configure_parser = _configure_radar_parser  # type: ignore[attr-defined]
         return radar_handler
 
+    def register_cli(self, kernel: Any) -> None:
+        self.register(kernel)
+
     def register(self, kernel: Any, engine: Any | None = None) -> None:
         if engine is not None:
             self._engine = engine

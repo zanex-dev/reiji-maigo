@@ -258,6 +258,44 @@ class TestFinalFlagshipGate(unittest.TestCase):
             self.assertTrue(cli_entry["command"])
             self.assertIn("mcp", cli_entry["args"])
 
+    def test_entry_points_direct_load_invokes_all_seven_plugin_slots(self) -> None:
+        """Simulate `pip install -e .` where entry_points loads all 7 plugins before builtin fallback."""
+        import importlib
+        from reiji_maigo.core.kernel import ReijiKernel
+
+        class _RealEp:
+            def __init__(self, name: str, target: str) -> None:
+                self.name = name
+                self._target = target
+
+            def load(self):
+                mod_name, attr_name = self._target.split(":", 1)
+                return getattr(importlib.import_module(mod_name), attr_name)
+
+        pyproject_raw = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        eps: list[_RealEp] = []
+        in_group = False
+        for line in pyproject_raw.splitlines():
+            s = line.strip()
+            if s == '[project.entry-points."reiji_maigo.plugins"]':
+                in_group = True
+                continue
+            if in_group and s.startswith("["):
+                break
+            if in_group and "=" in s:
+                k, v = [p.strip() for p in s.split("=", 1)]
+                eps.append(_RealEp(k, v.strip('"')))
+
+        self.assertEqual({ep.name for ep in eps}, EXPECTED_BUILTIN_PLUGINS)
+        with tempfile.TemporaryDirectory() as tmp:
+            kernel = ReijiKernel(home=tmp, disable_plugins=False)
+            records = kernel.load_plugins(entry_points_provider=lambda _grp: eps)
+            self.assertEqual(len(records), 7)
+            self.assertTrue(all(r.status == "loaded" and len(r.slots) >= 1 for r in records))
+            for cmd in ("roi", "epoch", "radar", "companion", "rerank", "import", "bench"):
+                self.assertIn(cmd, kernel.cli_commands)
+            self.assertIsNotNone(kernel.get_provider("reranker"))
+
     def test_vault_portable_bundle_cross_home_export_import_and_audit_verify(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home_src = Path(tmp) / "home_src"

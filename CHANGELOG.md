@@ -30,7 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - `star_panel`: Zero-top-level-`tkinter` duck-typed desktop UI bridge mounting the dark-gold-crimson `🕰️ 零时迷子` deck tab, header badge, radar cooldown marker, and one-click `L1` mutation Approve/Reject controls.
 
 ### Security & Verification
-- Expanded the dual-mode (`REIJI_MAIGO_DISABLE_PLUGINS=1` bare kernel and `=0` full 7-plugin suite) verification matrix and clean-room static leak scanner to **`223/223` passing tests**, alongside GitHub Actions multi-OS CI (`Ubuntu` / `Windows` / `macOS` × Python `3.10`–`3.12`).
+- Expanded the dual-mode (`REIJI_MAIGO_DISABLE_PLUGINS=1` bare kernel and `=0` full 7-plugin suite) verification matrix and clean-room static leak scanner to **`224/224` passing tests**, alongside GitHub Actions multi-OS CI (`Ubuntu` / `Windows` / `macOS` × Python `3.10`–`3.12`).
 
 ## [0.1.0] - 2026-11-27 — Foundation (Two-Tier Microkernel, Three-Bee Swarm & Four-Layer Zero-Trust Armor)
 

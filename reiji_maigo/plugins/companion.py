@@ -746,6 +746,9 @@ class CompanionPlugin:
         self._default_config_dir = config_dir
         self._default_python_exe = python_exe
 
+    def register_cli(self, kernel: Any) -> None:
+        self.register(kernel)
+
     def register(self, kernel: Any) -> None:
         def _companion_cli(*call_args: Any, **kwargs: Any) -> int:
             if len(call_args) == 1:
