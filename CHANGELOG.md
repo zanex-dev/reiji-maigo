@@ -6,6 +6,12 @@ All notable changes to **`reiji-maigo`** will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-11-27 — Packaging & Entry-Points Patch
+
+### Fixed
+- Exposed the `register_cli(kernel)` slot on `companion` and `thermal_sync` plugins so installed `entry_points("reiji_maigo.plugins")` discovery succeeds cleanly alongside `register_builtin_plugins(kernel)` across multi-OS CI (`d4d9d7b`).
+- Aligned `reiji_maigo.__version__` (reported by `reiji mcp` `serverInfo`) with package metadata `0.2.1`.
+
 ## [0.2.0] - 2026-11-27 — Midnight Flagship (Stdio MCP, MemoRRF Self-Probing, 7-Decimal Anti-MemoryTax Suite & Six-Dimensional Adversarial Harness)
 
 > *"At the stroke of midnight, the vessel restores itself whole — zero broken caches, zero forgotten truths, and zero third-party bloat."*

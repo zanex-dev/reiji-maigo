@@ -6,6 +6,12 @@
 
 日志格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本 2.0.0 (SemVer)](https://semver.org/lang/zh-CN/)。
 
+## [0.2.1] - 2026-11-27 — 插件入口与版本元数据补丁
+
+### 修复
+- 为 `companion` 与 `thermal_sync` 插件补齐 `register_cli(kernel)` 插槽，确保正式安装态下 `entry_points("reiji_maigo.plugins")` 自动发现与三端跨平台 CI 全绿通过（`d4d9d7b`）。
+- 同步 `reiji_maigo.__version__`（供 `reiji mcp` 握手 `serverInfo` 上报）至 `0.2.1`。
+
 ## [0.2.0] - 2026-11-27 — 子夜旗舰版（原生 Stdio MCP · MemoRRF 自探针重排 · 7 位小数反 MemoryTax 套件 · 六维对抗靶场）
 
 > **「当零点的钟声敲响，容器内损耗的一切如初复原——零碎裂缓存、零遗忘真相、零第三方臃肿依赖。」**

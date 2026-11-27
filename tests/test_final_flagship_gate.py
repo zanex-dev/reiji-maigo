@@ -392,13 +392,13 @@ class TestFinalFlagshipGate(unittest.TestCase):
 
         pyproject_raw = pyproject_path.read_text(encoding="utf-8")
         self.assertIn('license = { text = "PolyForm-Noncommercial-1.0.0" }', pyproject_raw)
-        self.assertIn('version = "0.2.0"', pyproject_raw)
+        self.assertIn('version = "0.2.1"', pyproject_raw)
         self.assertIn('readme = "README.md"', pyproject_raw)
 
         if tomllib is not None:
             data = tomllib.loads(pyproject_raw)
             project = data["project"]
-            self.assertEqual(project["version"], "0.2.0")
+            self.assertEqual(project["version"], "0.2.1")
             self.assertEqual(project["readme"], "README.md")
             self.assertEqual(project["dependencies"], [])
             self.assertEqual(project["license"], {"text": "PolyForm-Noncommercial-1.0.0"})
